@@ -1,76 +1,63 @@
 import pytest
 import pandas as pd
-from pathlib import Path
-import adventure as ap # Import student's code, aliased as 'ap'
+from pandas.testing import assert_frame_equal, assert_series_equal
+import numpy as np
+from io import StringIO
 
-# --- Fixtures to create temporary sample files ---
+# Assuming the student's code is in 'adventure.py'
+import adventure
 
-@pytest.fixture
-def sample_excel_file(tmp_path):
-    """Creates a temporary sample artifacts.xlsx file."""
-    file_path = tmp_path / "artifacts.xlsx"
-    # Create a Pandas Excel writer using openpyxl as the engine.
-    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-        # Write irrelevant data to the first sheet
-        df_sheet1 = pd.DataFrame({'Ignore': [1, 2]})
-        df_sheet1.to_excel(writer, sheet_name='Sheet1', index=False)
-
-        # Write relevant data to the 'Main Chamber' sheet with header rows
-        df_main = pd.DataFrame({
-            'ArtifactName': ['Golden Idol', 'Jade Monkey', 'Obsidian Dagger'],
-            'EstimatedValue': [5000, 1500, 800],
-            'RoomFound': ['Altar Room', 'Treasury', 'Sacrificial Chamber']
-        })
-        # Simulate header rows by writing empty frames first
-        pd.DataFrame(['Temple of Azmar - Artifact Inventory']).to_excel(writer, sheet_name='Main Chamber', index=False, header=False, startrow=0)
-        pd.DataFrame(['Report Date: 2024-10-30']).to_excel(writer, sheet_name='Main Chamber', index=False, header=False, startrow=1)
-        # Actual data starts after row 3 (index 3), headers on row 4 (index 3 after skipping)
-        df_main.to_excel(writer, sheet_name='Main Chamber', index=False, startrow=3)
-    return file_path
-
-@pytest.fixture
-def sample_tsv_file(tmp_path):
-    """Creates a temporary sample locations.tsv file."""
-    file_path = tmp_path / "locations.tsv"
-    content = "LocationID\tDescription\tDangerLevel\n" \
-              "LOC01\tEntrance Hall\tLow\n" \
-              "LOC02\tAltar Room\tMedium\n" \
-              "LOC03\tTreasury\tHigh"
-    file_path.write_text(content, encoding='utf-8')
-    return file_path
+# Sample CSV data mimicking expedition_data.csv for testing
+CSV_DATA = """ArtifactID,Type,Material,Weight_kg,EstValue,Depth_m,Description,Sector
+AZM001,Pottery Shard,Ceramic,0.5,50,2.5,Painted fragment,North
+AZM002,Statue Head,Marble,8.2,1500,8.0,Head of a deity?,West
+AZM003,Coin,Gold,0.1,800,1.5,Emperor Azmar inscription,North
+AZM004,Amulet,Jade,0.2,1200,5.5,Scarab beetle design,South
+AZM005,Spearhead,Bronze,1.5,300,4.0,,West
+AZM006,Goblet,Gold,0.8,2500,6.2,Intricate carvings,Central
+AZM007,Tablet,Clay,2.1,150,3.0,Cuneiform script fragment,North
+AZM008,Necklace,Gold,0.4,1800,5.0,Embedded with gems,Central
+AZM009,Pottery Shard,Ceramic,0.6,60,2.8,,North
+AZM010,Figurine,Bronze,3.5,600,7.5,Animal figure,West
+AZM011,Coin,Silver,0.05,200,1.8,Unknown ruler,North
+AZM012,Statue Base,Marble,150.0,5000,12.0,Massive stone base,Central
+AZM013,Amulet,Gold,0.3,1500,5.8,Eye symbol,South
+AZM014,Sword Hilt,Bronze,0.9,,9.0,Decorated hilt,West
+AZM015,Pottery Shard,Ceramic,0.4,40,2.2,Simple design,North
+AZM016,Mask,Gold,2.5,10000,11.5,Funerary mask,Central
+AZM017,Figurine,Ceramic,1.8,250,6.5,Humanoid shape,South
+AZM018,Coin,Bronze,0.15,20,1.2,Worn features,North
+AZM019,Statue Head,Marble,7.5,1300,8.5,Weathered features,West
+AZM020,Goblet,Silver,0.6,900,6.0,Plain silver goblet,Central
+"""
 
 @pytest.fixture
-def sample_journal_text():
-    """Provides sample journal text content."""
-    return """
-    Dr. Evelyn Reed - Azmar Expedition Journal
+def sample_df():
+    """Provides a sample DataFrame loaded from the CSV_DATA string."""
+    return pd.read_csv(StringIO(CSV_DATA))
 
-    Entry: 10/25/2024
-    Made it inside the main entrance (LOC01). Air is stale. Found strange markings. Code AZMAR-999 seems off.
-
-    Entry: 10/26/2024
-    Reached the Altar Room (LOC02). Discovered the Golden Idol! It matches code AZMAR-101. Incredible find.
-
-    Entry: 10/27/2024
-    Navigated to the Treasury (LOC03). Found the Jade Monkey. Security code AZMAR-256 seems relevant here. Need to log this by 11/01/2024.
-
-    Entry: 10/28/2024
-    Found the Sacrificial Chamber (LOC04). Very unsettling. Recovered the Obsidian Dagger. This corresponds to AZMAR-007 in the old texts.
-
-    Entry: 10/29/2024
-    Explored the Flooded Passage (LOC05). Difficult terrain. No major artifacts, but found map fragment AZMAR-314. Planning extraction for 11/05/2024. Invalid date 99/99/9999.
+# Test 6: Function find_heavy_deep_artifacts - Combined Criteria
+def test_find_heavy_deep_artifacts_basic(sample_df):
     """
+    Tests find_heavy_deep_artifacts with minimum weight and depth,
+    expecting rows that meet both criteria.
+    """
+    min_weight = 5.0
+    min_depth = 8.0
+    result_df = adventure.find_heavy_deep_artifacts(sample_df, min_weight, min_depth)
 
-@pytest.fixture
-def empty_journal_text():
-    """Provides journal text with no matching patterns."""
-    return "Journal Entry: No relevant codes or standard dates found here. Maybe next time. AZMAR-ABC is not a code."
+    # Manually find rows meeting Weight >= 5.0 AND Depth >= 8.0
+    expected_data = {
+        'ArtifactID': ['AZM002', 'AZM012', 'AZM019'],
+        'Type': ['Statue Head', 'Statue Base', 'Statue Head'],
+        'Material': ['Marble', 'Marble', 'Marble'],
+        'Weight_kg': [8.2, 150.0, 7.5],
+        'EstValue': [1500, 5000, 1300],
+        'Depth_m': [8.0, 12.0, 8.5],
+        'Description': ['Head of a deity?', 'Massive stone base', 'Weathered features'],
+        'Sector': ['West', 'Central', 'West']
+    }
+    expected_df = pd.DataFrame(expected_data)
+    expected_df.index = result_df.index # Align indices
 
-# --- Test Functions ---
-
-def test_extract_secret_codes_correct(sample_journal_text):
-    """Tests correct extraction of secret codes in AZMAR-XXX format."""
-    codes = ap.extract_secret_codes(sample_journal_text)
-    expected_codes = ['AZMAR-999', 'AZMAR-101', 'AZMAR-256', 'AZMAR-007', 'AZMAR-314']
-    assert isinstance(codes, list), "Function should return a list"
-    assert codes == expected_codes, f"Expected codes {expected_codes}, but got {codes}"
+    assert_frame_equal(result_df.reset_index(drop=True), expected_df.reset_index(drop=True), check_dtype=True)
